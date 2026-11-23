@@ -11,6 +11,7 @@ pub const OPTION_SHOW_REMOTE_CURSOR: &str = "show_remote_cursor";
 pub const OPTION_FOLLOW_REMOTE_CURSOR: &str = "follow_remote_cursor";
 pub const OPTION_FOLLOW_REMOTE_WINDOW: &str = "follow_remote_window";
 pub const OPTION_SHOW_QUALITY_MONITOR: &str = "show_quality_monitor";
+pub const OPTION_ENABLE_DECODER_QUEUE_CONTROL: &str = "enable-decoder-queue-control";
 pub const OPTION_DISABLE_AUDIO: &str = "disable_audio";
 pub const OPTION_ENABLE_REMOTE_PRINTER: &str = "enable-remote-printer";
 pub const OPTION_DISABLE_CLIPBOARD: &str = "disable_clipboard";

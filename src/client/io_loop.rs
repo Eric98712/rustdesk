@@ -1546,6 +1546,12 @@ impl<T: InvokeUiSession> Remote<T> {
         real_fps_map: HashMap<usize, i32>,
         peer: &mut Stream,
     ) {
+        if self.handler.lc.read().unwrap().get_option(keys::OPTION_ENABLE_DECODER_QUEUE_CONTROL)
+            == "Y"
+        {
+            self.fps_control_queue(direct, real_fps_map, peer).await;
+            return;
+        }
         self.video_threads.iter_mut().for_each(|(k, v)| {
             let real_fps = real_fps_map.get(k).cloned().unwrap_or_default();
             if real_fps == 0 {
@@ -1653,6 +1659,67 @@ impl<T: InvokeUiSession> Remote<T> {
                 ctl.refresh_times += 1;
                 ctl.last_refresh_instant = Some(Instant::now());
             }
+        }
+    }
+
+    async fn fps_control_queue(
+        &mut self,
+        direct: bool,
+        output_fps_map: HashMap<usize, i32>,
+        peer: &mut Stream,
+    ) {
+        let custom_fps = self.handler.lc.read().unwrap().custom_fps.clone();
+        let requested = custom_fps.lock().unwrap().unwrap_or(30).clamp(5, 120);
+        let mut target: Option<usize> = None;
+        let mut refreshes = Vec::new();
+        for (display, thread) in self.video_threads.iter_mut() {
+            let output_fps = output_fps_map.get(display).copied().unwrap_or(0).max(0) as usize;
+            let ctl = &mut thread.fps_control;
+            ctl.inactive_counter = if output_fps == 0 {
+                ctl.inactive_counter.saturating_add(1)
+            } else {
+                0
+            };
+            let queued = thread.video_queue.read().unwrap().len();
+            if ctl.inactive_counter >= 15 && queued == 0 {
+                continue;
+            }
+            let Some(capacity) = *thread.decode_fps.read().unwrap() else {
+                continue;
+            };
+            let epoch = ctl.latency_epoch.get_or_insert_with(Instant::now);
+            if let Some(decision) = ctl.latency_governor.update(super::latency_policy::Sample {
+                requested_fps: requested as usize,
+                decode_capacity_fps: capacity,
+                queued_frames: queued,
+                output_fps,
+                direct,
+                now_ms: epoch.elapsed().as_millis().min(u64::MAX as u128) as u64,
+            }) {
+                target = Some(target.map_or(decision.target_fps, |old| old.min(decision.target_fps)));
+                if decision.request_refresh {
+                    refreshes.push(*display);
+                }
+            }
+        }
+        if let Some(target) = target {
+            if Some(target) != self.last_auto_fps {
+                let mut misc = Misc::new();
+                misc.set_option(OptionMessage {
+                    custom_fps: target as _,
+                    ..Default::default()
+                });
+                let mut msg = Message::new();
+                msg.set_misc(misc);
+                if let Err(err) = peer.send(&msg).await {
+                    log::trace!("Failed to send decoder queue FPS limit: {}", err);
+                } else {
+                    self.last_auto_fps = Some(target);
+                }
+            }
+        }
+        for display in refreshes {
+            self.handler.refresh_video(display as _);
         }
     }
 
@@ -3136,6 +3203,8 @@ impl RemoveJob {
 
 #[derive(Debug, Default)]
 struct FpsControl {
+    latency_governor: super::latency_policy::Governor,
+    latency_epoch: Option<Instant>,
     refresh_times: usize,
     last_refresh_instant: Option<Instant>,
     idle_counter: usize,
@@ -3224,6 +3293,33 @@ mod tests {
             arrives(&mut far).await,
             "a clipboard after the login was held back"
         );
+    }
+
+    #[tokio::test]
+    async fn active_displays_send_the_lowest_queue_control_limit() {
+        let (mut remote, mut peer, mut far) = remote_and_peer().await;
+        remote.handler.lc.write().unwrap().config.options.insert(
+            keys::OPTION_ENABLE_DECODER_QUEUE_CONTROL.to_owned(), "Y".to_owned(),
+        );
+        *remote.handler.lc.read().unwrap().custom_fps.lock().unwrap() = Some(60);
+        let mut receivers = Vec::new();
+        for (display, capacity) in [(0, 100), (1, 40)] {
+            let (video_sender, receiver) = std::sync::mpsc::channel();
+            receivers.push(receiver);
+            remote.video_threads.insert(display, VideoThread {
+                video_queue: Arc::new(RwLock::new(ArrayQueue::new(client::VIDEO_QUEUE_SIZE))),
+                video_sender,
+                decode_fps: Arc::new(RwLock::new(Some(capacity))),
+                frame_count: Default::default(),
+                discard_queue: Default::default(),
+                fps_control: Default::default(),
+            });
+        }
+        remote.fps_control(true, HashMap::from([(0, 60), (1, 40)]), &mut peer).await;
+        let bytes = timeout(1000, far.next()).await.unwrap().unwrap().unwrap();
+        let msg = Message::parse_from_bytes(&bytes).unwrap();
+        assert_eq!(msg.misc().option().custom_fps, 36);
+        assert_eq!(remote.last_auto_fps, Some(36));
     }
 
     #[tokio::test]
