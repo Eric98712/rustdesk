@@ -5,9 +5,9 @@ waiting for a large frame-count backlog. It uses existing automatic FPS messages
 and display-refresh recovery; compressed delta frames are not discarded or
 reordered by the policy. There is no protocol or sender change.
 
-To opt in, close the session and set `enable-decoder-queue-control = 'Y'` in
-the `[options]` table of that peer's RustDesk configuration, then reconnect.
-Remove that option and reconnect to use the existing controller. There is no
+To opt in, exit the RustDesk UI and set `enable-decoder-queue-control = 'Y'` in
+the `[options]` table of that peer's RustDesk configuration, then restart and
+reconnect. Remove that option and restart to use the existing controller. There is no
 new UI or Web-client implementation in this proposal.
 
 The requested FPS remains the ceiling (5-120, default 30). Available decoder
