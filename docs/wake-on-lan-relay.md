@@ -12,8 +12,8 @@ rustdesk --wol AA:BB:CC:DD:EE:FF 192.168.50.255 192.168.50.2
 
 The defaults are `255.255.255.255` and `0.0.0.0` (OS-selected source). The command
 validates all arguments before sending three UDP port 9 packets, 250 ms apart,
-using the existing WoL library. An invalid argument or send error is returned
-through the existing native CLI error path. Successful sending is not proof that
+using the existing WoL library. An invalid argument or send error prints to
+stderr and exits with status 1. Successful sending is not proof that
 the target woke. No service, listener, persistent task or credentials are added.
 
 For an off-site caller, keep a computer online on the target's physical LAN and

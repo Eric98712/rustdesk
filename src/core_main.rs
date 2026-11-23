@@ -157,9 +157,11 @@ pub fn core_main() -> Option<CoreMainAction> {
             println!("{}", crate::BUILD_DATE);
             return None;
         } else if args[0] == "--wol" {
-            return crate::lan::send_wol_cli(&args[1..])
-                .err()
-                .map(|err| CoreMainAction::ExitFailure(err.into()));
+            if let Err(err) = crate::lan::send_wol_cli(&args[1..]) {
+                eprintln!("Failed to send wake packets: {err}");
+                std::process::exit(1);
+            }
+            return None;
         }
     }
     #[cfg(windows)]
