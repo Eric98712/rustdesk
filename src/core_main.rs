@@ -156,6 +156,10 @@ pub fn core_main() -> Option<CoreMainAction> {
         } else if args[0] == "--build-date" {
             println!("{}", crate::BUILD_DATE);
             return None;
+        } else if args[0] == "--wol" {
+            return crate::lan::send_wol_cli(&args[1..])
+                .err()
+                .map(|err| CoreMainAction::ExitFailure(err.into()));
         }
     }
     #[cfg(windows)]

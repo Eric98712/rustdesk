@@ -23,6 +23,11 @@ use std::{
 
 type Message = RendezvousMessage;
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod wake;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) use wake::run as send_wol_cli;
+
 #[cfg(not(target_os = "ios"))]
 pub(super) fn start_listening() -> ResultType<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], get_broadcast_port()));
